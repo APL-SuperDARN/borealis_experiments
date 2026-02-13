@@ -50,6 +50,9 @@ class Normalscan500khz(ExperimentPrototype):
 
         freq: int
             Operating frequency in kHz.
+        ctr_freq_offset: int
+            Offset from operating frequency to TX/RX center frequency in kHz.
+            Must be at least 50 kHz away from freq due center-null restrictions.
         """
         super().__init__(
             tx_bandwidth=500e3,
@@ -58,6 +61,10 @@ class Normalscan500khz(ExperimentPrototype):
         )
 
         freq = int(kwargs.get("freq", scf.COMMON_MODE_FREQ_1))
+        ctr_freq_offset = int(kwargs.get("ctr_freq_offset", 100))
+        if abs(ctr_freq_offset) < 50:
+            raise ValueError("ctr_freq_offset must have absolute value >= 50 kHz")
+        ctr_freq = freq + ctr_freq_offset
 
         self.add_slice(
             {
@@ -74,8 +81,8 @@ class Normalscan500khz(ExperimentPrototype):
                 "freq": freq,
                 # Explicit center frequencies avoid auto-center calc that assumes
                 # a wider fixed transition band than 500 kHz.
-                "txctrfreq": freq,
-                "rxctrfreq": freq,
+                "txctrfreq": ctr_freq,
+                "rxctrfreq": ctr_freq,
                 "acf": True,
                 "xcf": True,
                 "acfint": True,
