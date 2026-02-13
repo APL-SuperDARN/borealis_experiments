@@ -9,8 +9,11 @@ Intended use-case: lab testing of a single transmitter chain driven by one N200 
 """
 
 import borealis_experiments.superdarn_common_fields as scf
-from borealis_experiments.normalscan_500khz import decimation_500khz
+from borealis_experiments.normalscan_500khz import decimation_500khz, auto_center_freq_khz
 from utils.experiment_prototype import ExperimentPrototype
+
+LAB_FREQ_MIN_KHZ = 9000
+LAB_FREQ_MAX_KHZ = 18000
 
 
 class NormalscanTxTestSingleChan(ExperimentPrototype):
@@ -36,13 +39,13 @@ class NormalscanTxTestSingleChan(ExperimentPrototype):
 
         freq: int
             Operating frequency in kHz.
-        rx_ctr_freq_offset: int
-            Offset from operating frequency to RX center frequency in kHz.
-            Must satisfy 50 <= abs(offset) <= 175 for 500 kHz bandwidth.
-        tx_ctr_freq_offset: int
-            Offset from operating frequency to TX center frequency in kHz.
-            Defaults to 1750 kHz, matching the typical center frequency placement
-            produced by Borealis for 5 MHz TX bandwidth in normalscan-style experiments.
+            Must satisfy 9000 <= freq <= 18000.
+        rx_ctr_freq_offset: int, optional
+            Preferred RX center offset in kHz for 500 kHz bandwidth.
+            Optional tuning knob; defaults to 100 kHz.
+        tx_ctr_freq_offset: int, optional
+            Preferred TX center offset in kHz for 5 MHz bandwidth.
+            Optional tuning knob; defaults to 1750 kHz.
         """
         super().__init__(
             tx_bandwidth=5.0e6,
@@ -51,20 +54,21 @@ class NormalscanTxTestSingleChan(ExperimentPrototype):
         )
 
         freq = int(kwargs.get("freq", scf.COMMON_MODE_FREQ_1))
+        if not (LAB_FREQ_MIN_KHZ <= freq <= LAB_FREQ_MAX_KHZ):
+            raise ValueError(f"freq must satisfy {LAB_FREQ_MIN_KHZ} <= freq <= {LAB_FREQ_MAX_KHZ} kHz")
 
-        rx_ctr_freq_offset = int(kwargs.get("rx_ctr_freq_offset", 100))
-        if not (50 <= abs(rx_ctr_freq_offset) <= 175):
-            raise ValueError(
-                "rx_ctr_freq_offset must satisfy 50 <= abs(rx_ctr_freq_offset) <= 175 kHz"
-            )
+        rx_ctr_freq_offset = float(kwargs.get("rx_ctr_freq_offset", 100))
+        if abs(rx_ctr_freq_offset) < 50:
+            raise ValueError("rx_ctr_freq_offset must satisfy abs(rx_ctr_freq_offset) >= 50 kHz")
 
-        # Keep TX center placement comparable to normalscan's auto-centering for 5 MHz TX.
-        tx_ctr_freq_offset = int(kwargs.get("tx_ctr_freq_offset", 1750))
+        tx_ctr_freq_offset = float(kwargs.get("tx_ctr_freq_offset", 1750))
         if abs(tx_ctr_freq_offset) < 50:
             raise ValueError("tx_ctr_freq_offset must have absolute value >= 50 kHz")
 
-        txctrfreq = freq + tx_ctr_freq_offset
-        rxctrfreq = freq + rx_ctr_freq_offset
+        # Keep TX center placement comparable to normalscan while remaining robust
+        # against USRP clock quantization at frequency-boundary edges.
+        txctrfreq = auto_center_freq_khz(freq, self.tx_bandwidth, tx_ctr_freq_offset)
+        rxctrfreq = auto_center_freq_khz(freq, self.rx_bandwidth, rx_ctr_freq_offset)
 
         tx_ant = scf.config.tx_main_antennas[0]
         rx_ant = scf.config.rx_main_antennas[0]
@@ -94,4 +98,3 @@ class NormalscanTxTestSingleChan(ExperimentPrototype):
                 "decimation_scheme": decimation_500khz(),
             }
         )
-
