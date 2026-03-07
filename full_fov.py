@@ -19,6 +19,13 @@ from utils.experiment_prototype import ExperimentPrototype
 
 
 def rx_phase_pattern(beam_angle, freq_khz, antenna_locations):
+    if isinstance(freq_khz, (list, tuple, np.ndarray)):
+        if len(freq_khz) != 1:
+            raise ValueError(
+                f"rx_phase_pattern expects a single frequency, got {freq_khz}"
+            )
+        freq_khz = freq_khz[0]
+
     # Chebyshev 30-dB window
     window = [
         0.2910,
@@ -258,9 +265,13 @@ def rx_phase_pattern(beam_angle, freq_khz, antenna_locations):
         ],
     }
 
+    # Use tuned receive beam directions where available; otherwise fall back
+    # to the experiment-provided beam angles (needed for site/frequency combos
+    # not in the historical lookup table).
+    rx_beam_directions = adjusted_rx_beam_directions.get(int(freq_khz), beam_angle)
     shift = (
         get_phase_shift(
-            adjusted_rx_beam_directions[int(freq_khz)],
+            rx_beam_directions,
             [freq_khz],
             antenna_locations[:, 0],
         )[0]
@@ -289,22 +300,28 @@ class FullFOV(ExperimentPrototype):
         # default frequency set here
         freq = kwargs.get("freq", scf.COMMON_MODE_FREQ_1)
 
-        self.add_slice(
-            {  # slice_id = 0, there is only one slice.
-                "pulse_sequence": scf.SEQUENCE_7P,
-                "tau_spacing": scf.TAU_SPACING_7P,
-                "pulse_len": scf.PULSE_LEN_45KM,
-                "num_ranges": scf.STD_NUM_RANGES,
-                "first_range": scf.STD_FIRST_RANGE,
-                "intt": scf.INTT_MS,  # duration of an integration, in ms
-                "beam_angle": scf.STD_BEAM_ANGLES,
-                "rx_beam_order": [[i for i in range(len(scf.STD_BEAM_ANGLES))]],
-                "tx_beam_order": [0],  # only one pattern
-                "tx_antenna_pattern": scf.easy_widebeam,
-                "rx_antenna_pattern": rx_phase_pattern,
-                "freq": freq,  # kHz
-                "acf": True,
-                "xcf": True,  # cross-correlation processing
-                "acfint": True,  # interferometer acfs
-            }
-        )
+        exp_slice = {
+            # slice_id = 0, there is only one slice.
+            "pulse_sequence": scf.SEQUENCE_7P,
+            "tau_spacing": scf.TAU_SPACING_7P,
+            "pulse_len": scf.PULSE_LEN_45KM,
+            "num_ranges": scf.STD_NUM_RANGES,
+            "first_range": scf.STD_FIRST_RANGE,
+            "intt": scf.INTT_MS,  # duration of an integration, in ms
+            "beam_angle": scf.STD_BEAM_ANGLES,
+            "rx_beam_order": [[i for i in range(len(scf.STD_BEAM_ANGLES))]],
+            "tx_beam_order": [0],  # only one pattern
+            "tx_antenna_pattern": scf.easy_widebeam,
+            "freq": freq,  # kHz
+            "acf": True,
+            "xcf": True,  # cross-correlation processing
+            "acfint": True,  # interferometer acfs
+        }
+
+        # The custom RX phase pattern assumes a full receive array. For sparse
+        # receive channel configurations (like current WAL), allow the default
+        # receive beamforming path instead.
+        if len(scf.config.rx_main_antennas) == len(scf.config.main_antenna_locations):
+            exp_slice["rx_antenna_pattern"] = rx_phase_pattern
+
+        self.add_slice(exp_slice)
