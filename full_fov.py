@@ -258,17 +258,23 @@ def rx_phase_pattern(beam_angle, freq_khz, antenna_locations):
         ],
     }
 
-    shift = (
-        get_phase_shift(
-            adjusted_rx_beam_directions[int(freq_khz)],
-            [freq_khz],
-            antenna_locations[:, 0],
-        )[0]
-        * 0.9999999
-    )
+    if antenna_locations.shape[0] == scf.config.main_antenna_count:
+        active_antennas = np.asarray(scf.config.rx_main_antennas, dtype=int)
+    elif antenna_locations.shape[0] == scf.config.intf_antenna_count:
+        active_antennas = np.asarray(scf.config.rx_intf_antennas, dtype=int)
+    else:
+        active_antennas = np.arange(antenna_locations.shape[0], dtype=int)
+
+    active_locations = antenna_locations[active_antennas, 0]
+
+    tuned_beam_angles = adjusted_rx_beam_directions.get(int(freq_khz))
+    if tuned_beam_angles is None or len(tuned_beam_angles) != len(beam_angle):
+        tuned_beam_angles = beam_angle
+
+    shift = get_phase_shift(tuned_beam_angles, [freq_khz], active_locations)[0] * 0.9999999
 
     # Apply a window to the antenna data streams of the main array
-    if antenna_locations.shape[0] == 16:
+    if active_locations.shape[0] == len(window):
         shift = np.einsum("ij,j->ij", shift, np.array(window, dtype=np.float32))
 
     return shift
@@ -301,7 +307,6 @@ class FullFOV(ExperimentPrototype):
                 "rx_beam_order": [[i for i in range(len(scf.STD_BEAM_ANGLES))]],
                 "tx_beam_order": [0],  # only one pattern
                 "tx_antenna_pattern": scf.easy_widebeam,
-                "rx_antenna_pattern": rx_phase_pattern,
                 "freq": freq,  # kHz
                 "acf": True,
                 "xcf": True,  # cross-correlation processing

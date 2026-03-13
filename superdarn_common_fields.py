@@ -119,15 +119,60 @@ STD_SCANBOUND = easy_scanbound(
 
 def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
     """
-    Returns phases in degrees for each antenna in the main array that will generate a wide beam pattern
-    that illuminates the full FOV. Only 8 or 16 antennas at common frequencies are supported.
+    Returns complex antenna weights for the main array that generate a wide transmit pattern
+    that illuminates the full FOV.
+
+    Supported operating points:
+    - 16 or 8 antennas with the legacy cached phase laws.
+    - The current WAL sparse 11-element TX set at 12000/13700 kHz.
     """
+    num_antennas = config.main_antenna_count
+    phases = np.zeros(num_antennas, dtype=np.complex64)
+    tx_idx = np.asarray(tx_antennas, dtype=int)
+
+    wal_sparse_cached = {
+        12000: {
+            2: 0.0,
+            3: 172.578507,
+            4: 53.873606,
+            5: 248.43369,
+            6: 331.413214,
+            7: 25.611805,
+            8: 50.020029,
+            9: 35.403877,
+            10: 353.723171,
+            12: 270.889975,
+            13: 142.781446,
+        },
+        13700: {
+            2: 0.0,
+            3: 117.205616,
+            4: 338.268733,
+            5: 32.710628,
+            6: 27.898531,
+            7: 46.891061,
+            8: 116.232303,
+            9: 292.800707,
+            10: 234.136463,
+            12: 132.31838,
+            13: 11.733696,
+        },
+    }
+
+    freq_key = int(round(float(frequency_khz)))
+    if config.site_id == "wal" and freq_key in wal_sparse_cached:
+        wal_tx = np.array(sorted(wal_sparse_cached[freq_key].keys()), dtype=int)
+        if np.array_equal(np.sort(tx_idx), wal_tx):
+            for ant, phase_deg in wal_sparse_cached[freq_key].items():
+                phases[ant] = np.exp(1j * np.deg2rad(phase_deg))
+            return phases.reshape(1, num_antennas) * 0.999999
+
     antenna_spacing_m = (
         antenna_locations[1, 0] - antenna_locations[0, 0]
     )  # difference in x-position of first two antennas
-    if not np.isclose(antenna_spacing_m, 15.24):
+    if not (np.isclose(antenna_spacing_m, 15.24) or np.isclose(antenna_spacing_m, 12.8016)):
         raise ValueError(
-            f"Antenna spacing must be 15.24m. Given value: {antenna_spacing_m}"
+            f"Antenna spacing must be 15.24m (or 12.8016m at WAL). Given value: {antenna_spacing_m}"
         )
 
     cached_values_16_antennas = {
@@ -470,24 +515,26 @@ def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
             0.0,
         ],
     }
-    num_antennas = config.main_antenna_count
-    phases = np.zeros(num_antennas, dtype=np.complex64)
-    if len(tx_antennas) == 16:
-        if frequency_khz in cached_values_16_antennas.keys():
-            phases[tx_antennas] = np.exp(
-                1j * np.deg2rad(cached_values_16_antennas[frequency_khz])
-            )
-            return phases.reshape(1, num_antennas) * 0.999999
-    elif len(tx_antennas) == 8:
-        if frequency_khz in cached_values_8_antennas.keys():
-            phases[tx_antennas] = np.exp(
-                1j * np.deg2rad(cached_values_8_antennas[frequency_khz])
-            )
-            return phases.reshape(1, num_antennas) * 0.999999
-    # If you get this far, the number of antennas or frequency is not supported for this function.
-    raise ValueError(f"Invalid parameters for easy_widebeam(): tx_antennas: {tx_antennas}, "
-                     f"frequency_khz: {frequency_khz}, main_antenna_count: {num_antennas}.\n"
-                     f"This could be accidental - if you have disconnected a TX channel in your config file, "
-                     f"this will reduce the number of transmitting antennas.\nWide transmission beam patterns "
-                     f"are very sensitive, so this function only accepts specific operating parameters to produce "
-                     f"predictable beam patterns.")
+    if tx_idx.size < 2:
+        raise ValueError(
+            f"Invalid parameters for easy_widebeam(): tx_antennas: {tx_antennas}, "
+            f"frequency_khz: {frequency_khz}, main_antenna_count: {num_antennas}. "
+            f"Need at least 2 TX antennas for a deterministic widebeam pattern."
+        )
+
+    nearest_16 = min(cached_values_16_antennas.keys(), key=lambda k: abs(float(frequency_khz) - float(k)))
+    nearest_8 = min(cached_values_8_antennas.keys(), key=lambda k: abs(float(frequency_khz) - float(k)))
+
+    if tx_idx.size == 8:
+        phases[tx_idx] = np.exp(1j * np.deg2rad(cached_values_8_antennas[nearest_8]))
+        return phases.reshape(1, num_antennas) * 0.999999
+
+    cached16 = np.exp(1j * np.deg2rad(cached_values_16_antennas[nearest_16]))
+    if tx_idx.size == 16:
+        phases[tx_idx] = cached16
+    else:
+        # Reuse the 16-element phase law on the active antenna indices when some
+        # transmit channels are disconnected.
+        phases[tx_idx] = cached16[tx_idx]
+
+    return phases.reshape(1, num_antennas) * 0.999999

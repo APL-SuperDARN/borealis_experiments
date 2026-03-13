@@ -48,6 +48,17 @@ def filter_15km_mode():
     return scheme
 
 
+def decimation_for_pulse_len(pulse_len_us: int):
+    if pulse_len_us == scf.PULSE_LEN_15KM:
+        return filter_15km_mode()
+    if pulse_len_us == 300:
+        # Keep ACF timing valid: pulse length must equal one output-sample interval.
+        return dm.create_default_scheme()
+    raise ValueError(
+        f'Unsupported pulse_len_us={pulse_len_us}; supported values are {scf.PULSE_LEN_15KM} and 300.'
+    )
+
+
 class FullFOV15Km(ExperimentPrototype):
     cpid = 3801
 
@@ -55,24 +66,36 @@ class FullFOV15Km(ExperimentPrototype):
         """
         The mode transmits with a pre-calculated phase progression across the array which illuminates
         the full FOV, and receives on all antennas. This mode uses 15-km range gates for high spatial resolution.
+
+        Optional kwargs:
+          - pulse_len_us
+          - intt_ms
+          - freq
+          - num_ranges
+          - first_range_km
         """
         super().__init__(comment_string="Full FOV 15km Resolution Experiment")
+
+        pulse_len_us = int(kwargs.get("pulse_len_us", scf.PULSE_LEN_15KM))
+        intt_ms = int(kwargs.get("intt_ms", scf.INTT_MS))
+        freq_khz = int(kwargs.get("freq", scf.COMMON_MODE_FREQ_1))
+        num_ranges = int(kwargs.get("num_ranges", scf.STD_NUM_RANGES * 3))
+        first_range_km = float(kwargs.get("first_range_km", 90))
 
         self.add_slice(
             {  # slice_id = 0, there is only one slice.
                 "pulse_sequence": scf.SEQUENCE_7P,
                 "tau_spacing": scf.TAU_SPACING_7P,
-                "pulse_len": scf.PULSE_LEN_15KM,
-                "num_ranges": scf.STD_NUM_RANGES
-                * 3,  # Each range is a third of the usual size, want same spatial extent
-                "first_range": 90,  # km from radar
-                "intt": scf.INTT_MS,  # duration of an integration, in ms
+                "pulse_len": pulse_len_us,
+                "num_ranges": num_ranges,
+                "first_range": first_range_km,
+                "intt": intt_ms,  # duration of an integration, in ms
                 "beam_angle": scf.STD_BEAM_ANGLES,
                 "rx_beam_order": [[i for i in range(len(scf.STD_BEAM_ANGLES))]],
                 "tx_beam_order": [0],  # only one pattern
                 "tx_antenna_pattern": scf.easy_widebeam,
-                "freq": scf.COMMON_MODE_FREQ_1,  # kHz
-                "decimation_scheme": filter_15km_mode(),
+                "freq": freq_khz,  # kHz
+                "decimation_scheme": decimation_for_pulse_len(pulse_len_us),
                 "acf": True,
                 "xcf": True,
             }
