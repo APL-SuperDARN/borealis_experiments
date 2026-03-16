@@ -49,6 +49,8 @@ def filter_15km_mode():
 
 
 def decimation_for_pulse_len(pulse_len_us: int):
+    # The special 15-km filter chain only lines up with the 100-us pulse length. If operators bump
+    # the pulse length back to 300 us, use the stock decimation scheme so ACF timing remains valid.
     if pulse_len_us == scf.PULSE_LEN_15KM:
         return filter_15km_mode()
     if pulse_len_us == 300:
@@ -79,6 +81,8 @@ class FullFOV15Km(ExperimentPrototype):
         pulse_len_us = int(kwargs.get("pulse_len_us", scf.PULSE_LEN_15KM))
         intt_ms = int(kwargs.get("intt_ms", scf.INTT_MS))
         freq_khz = int(kwargs.get("freq", scf.COMMON_MODE_FREQ_1))
+        # Default to 3x the standard number of gates so the finer 15-km spacing covers roughly the
+        # same total range extent as the standard 45-km FullFOV mode.
         num_ranges = int(kwargs.get("num_ranges", scf.STD_NUM_RANGES * 3))
         first_range_km = float(kwargs.get("first_range_km", 90))
 

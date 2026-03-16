@@ -37,6 +37,8 @@ class NormalscanCfs(ExperimentPrototype):
         super().__init__()
 
         default_center_khz = int(scf.COMMON_MODE_FREQ_1)
+        # Accept either an explicit [min, max] band or a center/width pair so operators can tune
+        # the search window from schedule kwargs without editing the experiment code again.
         cfs_center_khz = int(kwargs.get("cfs_center_khz", default_center_khz))
         cfs_width_khz = int(kwargs.get("cfs_width_khz", 300))
         half_width = max(1, cfs_width_khz // 2)
@@ -54,6 +56,8 @@ class NormalscanCfs(ExperimentPrototype):
 
         cfs_pwr_threshold_raw = kwargs.get("cfs_pwr_threshold", 3.0)
         cfs_pwr_threshold = (
+            # Treat None/"none" as "let CFS choose from the requested band without applying a
+            # fixed power threshold cut" so the caller can disable that filter from the CLI.
             None if cfs_pwr_threshold_raw in {None, "", "none", "None"} else float(cfs_pwr_threshold_raw)
         )
 
@@ -71,6 +75,8 @@ class NormalscanCfs(ExperimentPrototype):
                 "rx_beam_order": scf.STD_BEAM_ORDER,
                 "tx_beam_order": scf.STD_BEAM_ORDER,
                 "scanbound": scf.STD_SCANBOUND,
+                # Borealis will search this frequency interval before each run and select the
+                # channel that best satisfies the CFS stability/power criteria below.
                 "cfs_range": [cfs_min_khz, cfs_max_khz],
                 "cfs_duration": cfs_duration,
                 "cfs_stable_time": cfs_stable_time,

@@ -130,20 +130,29 @@ def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
     phases = np.zeros(num_antennas, dtype=np.complex64)
     tx_idx = np.asarray(tx_antennas, dtype=int)
 
+    # Wallops currently runs FullFOV with TX channels 0, 1, 11, 14, and 15 down, leaving the
+    # sparse active set [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13].
+    #
+    # These per-frequency phases are manual copies of the chosen offline optimization result for
+    # that sparse array: NEC element-factor export -> genetic-array/batch_genetic_solver.py ->
+    # select a preferred solution from the plots/HDF5 output -> paste the relative phases here.
+    #
+    # Keys are physical antenna indices and values are relative phases in degrees. Antenna 2 is
+    # held at 0 degrees as the phase reference used when the solution was copied into Borealis.
     wal_sparse_cached = {
         12000: {
             2: 0.0,
-            3: 172.578507,
-            4: 53.873606,
-            5: 248.43369,
-            6: 331.413214,
-            7: 25.611805,
-            8: 50.020029,
-            9: 35.403877,
-            10: 353.723171,
-            12: 270.889975,
-            13: 142.781446,
-        },
+            3: 161.87851,
+            4: 153.453079,
+            5: 305.665375,
+            6: 329.709198,
+            7: 144.071167,
+            8: 58.509125,
+            9: 34.303589,
+            10: 42.588226,
+            12: 343.550934,
+            13: 167.465164,
+        },               
         13700: {
             2: 0.0,
             3: 117.205616,
@@ -522,6 +531,8 @@ def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
             f"Need at least 2 TX antennas for a deterministic widebeam pattern."
         )
 
+    # The legacy cached phase laws only exist at discrete optimization frequencies. If a nearby
+    # frequency is requested, reuse the closest solved entry instead of failing outright.
     nearest_16 = min(cached_values_16_antennas.keys(), key=lambda k: abs(float(frequency_khz) - float(k)))
     nearest_8 = min(cached_values_8_antennas.keys(), key=lambda k: abs(float(frequency_khz) - float(k)))
 
@@ -533,8 +544,8 @@ def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
     if tx_idx.size == 16:
         phases[tx_idx] = cached16
     else:
-        # Reuse the 16-element phase law on the active antenna indices when some
-        # transmit channels are disconnected.
+        # If we do not have a dedicated sparse solution for this exact active set, fall back to
+        # the nearest 16-element phase law and sample it at the enabled antenna indices.
         phases[tx_idx] = cached16[tx_idx]
 
     return phases.reshape(1, num_antennas) * 0.999999

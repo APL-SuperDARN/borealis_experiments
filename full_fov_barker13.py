@@ -21,6 +21,8 @@ BASE_TAU_US = scf.TAU_SPACING_7P
 
 
 def _build_chip_sequence(base_sequence: list[int], base_tau_us: int, chip_us: int, chips_per_pulse: int) -> list[int]:
+    # Borealis schedules pulse times, not arbitrary intra-pulse chip boundaries. Expand each coarse
+    # 7-pulse slot into contiguous chip pulses so Barker coding can be emitted without DSP changes.
     coarse_starts = [int(round(p * base_tau_us / chip_us)) for p in base_sequence]
 
     chip_sequence: list[int] = []
@@ -40,6 +42,7 @@ def barker13_phase_encode(_beam_iter, _sequence_num, num_pulses):
         raise ValueError(f"Expected {expected} pulses, got {num_pulses}")
 
     phase = np.zeros(num_pulses, dtype=np.float64)
+    # Map Barker +1/-1 chips to BPSK phase flips in degrees.
     chip_phase = np.where(BARKER13 > 0, 0.0, 180.0)
     for i in range(len(BASE_SEQUENCE_7P)):
         start = i * chips_per_pulse
@@ -59,6 +62,8 @@ def oversampled_rx_scheme(output_rate_hz: float = 200_000.0) -> dm.DecimationSch
     ripple_db = 80
     scale = 1000.0
 
+    # Keep enough coded-waveform bandwidth for offline matched filtering while exporting a denser
+    # receive grid than standard rawacf production would use.
     taps = scale * dm.create_firwin_filter_by_attenuation(sample_rate, transition_hz, cutoff_hz, ripple_db)
     stage = dm.DecimationStage(0, sample_rate, dm_rate, taps.tolist())
     return dm.DecimationScheme(sample_rate, sample_rate / dm_rate, stages=[stage])
@@ -79,6 +84,8 @@ class FullFOVBarker13(ExperimentPrototype):
         comment = (
             f"Full FOV Barker-13 oversampled RX; rx_sample_spacing_km={sample_spacing_km:.3f}"
         )
+        # Include the effective output sample spacing in the experiment comment so downstream IQ
+        # analysis can recover the intended pulse-compression grid from the metadata alone.
         super().__init__(comment_string=comment)
 
         chips_per_pulse = len(BARKER13)
@@ -99,6 +106,8 @@ class FullFOVBarker13(ExperimentPrototype):
                 "freq": freq_khz,
                 "decimation_scheme": oversampled_rx_scheme(output_rx_rate_hz),
                 "pulse_phase_offset": barker13_phase_encode,
+                # This mode is intended for IQ capture plus offline pulse compression, so skip the
+                # real-time ACF/XCF products that assume the uncoded standard processing chain.
                 "acf": False,
                 "xcf": False,
                 "acfint": False,

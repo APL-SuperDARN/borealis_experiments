@@ -115,6 +115,8 @@ class KatscanBarker13OS1Km(ExperimentPrototype):
             f"Katscan Barker-13 oversampled RX (1-km grid product); "
             f"rx_sample_spacing_km={sample_spacing_km:.3f}"
         )
+        # Record the actual output sample spacing in metadata so offline pulse-compression code
+        # can tell the difference between grid spacing and true coded-waveform resolution.
         super().__init__(comment_string=comment)
 
         chips_per_pulse = len(BARKER13)
@@ -127,6 +129,8 @@ class KatscanBarker13OS1Km(ExperimentPrototype):
 
         self.add_slice(
             {
+                # Like katscan_barker13, this expands each 8-pulse slot into Barker chips, but the
+                # receive path is oversampled so offline products can be generated on a finer grid.
                 "pulse_sequence": chip_sequence,
                 "tau_spacing": chip_us,
                 "pulse_len": chip_us,
@@ -140,6 +144,8 @@ class KatscanBarker13OS1Km(ExperimentPrototype):
                 "freq": freq,
                 "decimation_scheme": oversampled_rx_scheme(output_rx_rate_hz),
                 "pulse_phase_offset": barker13_phase_encode,
+                # Disable real-time lag products; the intended output is oversampled IQ for later
+                # matched filtering and A/B comparisons against standard modes.
                 "acf": False,
                 "xcf": False,
                 "acfint": False,

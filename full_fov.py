@@ -19,6 +19,9 @@ from utils.experiment_prototype import ExperimentPrototype
 
 
 def rx_phase_pattern(beam_angle, freq_khz, antenna_locations):
+    # Helper for experiments that want to apply frequency-specific RX beam corrections at runtime.
+    # The tuned directions below come from offline widebeam simulations, not from a calculation
+    # performed inside Borealis during the experiment.
     # Chebyshev 30-dB window
     window = [
         0.2910,
@@ -258,6 +261,8 @@ def rx_phase_pattern(beam_angle, freq_khz, antenna_locations):
         ],
     }
 
+    # antenna_locations contains the full geometry table for the main or interferometer array.
+    # Restrict the steering calculation to the channels that are actually enabled in the config.
     if antenna_locations.shape[0] == scf.config.main_antenna_count:
         active_antennas = np.asarray(scf.config.rx_main_antennas, dtype=int)
     elif antenna_locations.shape[0] == scf.config.intf_antenna_count:
@@ -267,13 +272,17 @@ def rx_phase_pattern(beam_angle, freq_khz, antenna_locations):
 
     active_locations = antenna_locations[active_antennas, 0]
 
+    # Only some frequencies have offline-tuned RX beam directions. The table below still contains
+    # the legacy Canadian frequencies, so WAL's current 12000/13700-kHz operation falls back to
+    # the nominal beam-angle list until dedicated Wallops RX corrections are added.
     tuned_beam_angles = adjusted_rx_beam_directions.get(int(freq_khz))
     if tuned_beam_angles is None or len(tuned_beam_angles) != len(beam_angle):
         tuned_beam_angles = beam_angle
 
     shift = get_phase_shift(tuned_beam_angles, [freq_khz], active_locations)[0] * 0.9999999
 
-    # Apply a window to the antenna data streams of the main array
+    # Only apply the 16-point taper when we actually have the full main array. A sparse RX set or
+    # the interferometer array should not be forced through a mismatched 16-element window.
     if active_locations.shape[0] == len(window):
         shift = np.einsum("ij,j->ij", shift, np.array(window, dtype=np.float32))
 
@@ -307,6 +316,9 @@ class FullFOV(ExperimentPrototype):
                 "rx_beam_order": [[i for i in range(len(scf.STD_BEAM_ANGLES))]],
                 "tx_beam_order": [0],  # only one pattern
                 "tx_antenna_pattern": scf.easy_widebeam,
+                # Keep rx_antenna_pattern unset for now. The helper above does not yet contain
+                # Wallops-specific corrected RX tables for 12000/13700 kHz, so re-enabling it here
+                # would not yet produce the intended corrected Wallops beam centers.
                 "freq": freq,  # kHz
                 "acf": True,
                 "xcf": True,  # cross-correlation processing
