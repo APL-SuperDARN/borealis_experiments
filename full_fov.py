@@ -261,32 +261,114 @@ def rx_phase_pattern(beam_angle, freq_khz, antenna_locations):
         ],
     }
 
+    # Wallops 12 MHz sparse-array corrections generated from beam_corrections.py using the
+    # current 11-element TX widebeam phases and the actual active RX antenna sets from wal_config.
+    wallops_adjusted_rx_main_beam_directions = {
+        12000: [
+            -40.7,
+            -34.2,
+            -30.7,
+            -28.5,
+            -25.2,
+            -20.8,
+            -18.2,
+            -15.7,
+            -11.5,
+            -7.5,
+            -4.8,
+            -1.7,
+            1.7,
+            4.6,
+            7.6,
+            11.4,
+            15.2,
+            18.0,
+            21.1,
+            25.6,
+            28.8,
+            30.9,
+            34.0,
+            40.3,
+        ],
+    }
+    wallops_adjusted_rx_intf_beam_directions = {
+        12000: [
+            -36.6,
+            -35.0,
+            -31.1,
+            -28.8,
+            -25.3,
+            -21.1,
+            -18.5,
+            -16.0,
+            -11.7,
+            -7.5,
+            -4.6,
+            -1.7,
+            1.5,
+            4.5,
+            7.5,
+            11.4,
+            15.3,
+            18.3,
+            21.6,
+            26.0,
+            29.2,
+            31.3,
+            34.9,
+            37.2,
+        ],
+    }
+
     # antenna_locations contains the full geometry table for the main or interferometer array.
     # Restrict the steering calculation to the channels that are actually enabled in the config.
-    if antenna_locations.shape[0] == scf.config.main_antenna_count:
+    is_main_array = antenna_locations.shape[0] == scf.config.main_antenna_count
+    is_intf_array = antenna_locations.shape[0] == scf.config.intf_antenna_count
+    if is_main_array:
         active_antennas = np.asarray(scf.config.rx_main_antennas, dtype=int)
-    elif antenna_locations.shape[0] == scf.config.intf_antenna_count:
+    elif is_intf_array:
         active_antennas = np.asarray(scf.config.rx_intf_antennas, dtype=int)
     else:
         active_antennas = np.arange(antenna_locations.shape[0], dtype=int)
 
     active_locations = antenna_locations[active_antennas, 0]
 
-    # Only some frequencies have offline-tuned RX beam directions. The table below still contains
-    # the legacy Canadian frequencies, so WAL's current 12000/13700-kHz operation falls back to
-    # the nominal beam-angle list until dedicated Wallops RX corrections are added.
-    tuned_beam_angles = adjusted_rx_beam_directions.get(int(freq_khz))
+    if is_main_array:
+        tuned_beam_angles = wallops_adjusted_rx_main_beam_directions.get(
+            int(freq_khz),
+            adjusted_rx_beam_directions.get(int(freq_khz)),
+        )
+    elif is_intf_array:
+        tuned_beam_angles = wallops_adjusted_rx_intf_beam_directions.get(
+            int(freq_khz),
+            adjusted_rx_beam_directions.get(int(freq_khz)),
+        )
+    else:
+        tuned_beam_angles = adjusted_rx_beam_directions.get(int(freq_khz))
+
     if tuned_beam_angles is None or len(tuned_beam_angles) != len(beam_angle):
         tuned_beam_angles = beam_angle
 
-    shift = get_phase_shift(tuned_beam_angles, [freq_khz], active_locations)[0] * 0.9999999
+    active_shift = get_phase_shift(tuned_beam_angles, [freq_khz], active_locations)[0] * 0.9999999
 
-    # Only apply the 16-point taper when we actually have the full main array. A sparse RX set or
-    # the interferometer array should not be forced through a mismatched 16-element window.
-    if active_locations.shape[0] == len(window):
-        shift = np.einsum("ij,j->ij", shift, np.array(window, dtype=np.float32))
+    # The legacy full-array Canadian mode uses a 16-point Chebyshev taper. For the sparse 11-main-
+    # antenna Wallops configuration, the 12 MHz correction sweep worked better with uniform RX
+    # weighting, so do not force the subset through the 16-point taper.
+    if is_main_array and active_locations.shape[0] == len(window):
+        active_shift = np.einsum(
+            "ij,j->ij",
+            active_shift,
+            np.array(window, dtype=np.float32),
+        )
 
-    return shift
+    # Borealis indexes the returned phase matrix by physical antenna number for each array, so
+    # return a dense array with zeros on inactive channels rather than a sparse active-channel view.
+    dense_shift = np.zeros(
+        (len(beam_angle), antenna_locations.shape[0]),
+        dtype=active_shift.dtype,
+    )
+    dense_shift[:, active_antennas] = active_shift
+    return dense_shift
 
 
 class FullFOV(ExperimentPrototype):
@@ -301,7 +383,8 @@ class FullFOV(ExperimentPrototype):
         """
         super().__init__()
 
-        # default frequency set here
+        # On WAL, COMMON_MODE_FREQ_1 resolves to 12000 kHz, so the default FullFOV run uses
+        # the current wal_sparse_cached[12000] TX phase law through scf.easy_widebeam().
         freq = kwargs.get("freq", scf.COMMON_MODE_FREQ_1)
 
         self.add_slice(
@@ -316,9 +399,7 @@ class FullFOV(ExperimentPrototype):
                 "rx_beam_order": [[i for i in range(len(scf.STD_BEAM_ANGLES))]],
                 "tx_beam_order": [0],  # only one pattern
                 "tx_antenna_pattern": scf.easy_widebeam,
-                # Keep rx_antenna_pattern unset for now. The helper above does not yet contain
-                # Wallops-specific corrected RX tables for 12000/13700 kHz, so re-enabling it here
-                # would not yet produce the intended corrected Wallops beam centers.
+                "rx_antenna_pattern": rx_phase_pattern,
                 "freq": freq,  # kHz
                 "acf": True,
                 "xcf": True,  # cross-correlation processing
