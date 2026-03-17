@@ -113,6 +113,8 @@ class KatscanBarker13(ExperimentPrototype):
 
         self.add_slice(
             {
+                # Reuse the standard katscan timing skeleton, but replace each coarse pulse with a
+                # run of Barker chips so matched filtering can be done from saved IQ later.
                 "pulse_sequence": CHIP_SEQUENCE,
                 "tau_spacing": CHIP_US,
                 "pulse_len": CHIP_US,
@@ -126,6 +128,8 @@ class KatscanBarker13(ExperimentPrototype):
                 "freq": freq,
                 "decimation_scheme": filter_coded_mode(),
                 "pulse_phase_offset": barker13_phase_encode,
+                # As with the FullFOV coded mode, these products are meant for offline decoding
+                # rather than real-time ACF/XCF generation inside Borealis.
                 "acf": False,
                 "xcf": False,
                 "acfint": False,

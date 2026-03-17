@@ -120,15 +120,13 @@ STD_SCANBOUND = easy_scanbound(
 def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
     """
     Returns phases in degrees for each antenna in the main array that will generate a wide beam pattern
-    that illuminates the full FOV. Only 8 or 16 antennas at common frequencies are supported.
+    that illuminates the full FOV. Only 8 or 16 antennas at common frequencies are supported, plus
+    the WAL sparse-array override below.
     """
-
-    antenna_spacing_m = (
-        antenna_locations[1, 0] - antenna_locations[0, 0]
-    )  # difference in x-position of first two antennas
-    if not np.isclose(antenna_spacing_m, 15.24):
+    antenna_spacing_m = config.main_antenna_spacing
+    if not (np.isclose(antenna_spacing_m, 15.24) or np.isclose(antenna_spacing_m, 12.8016)):
         raise ValueError(
-            f"Antenna spacing must be 15.24m. Given value: {antenna_spacing_m}"
+            f"Antenna spacing must be 15.24m (or 12.8016m at WAL). Given value: {antenna_spacing_m}"
         )
 
     cached_values_16_antennas = {
@@ -471,8 +469,42 @@ def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
             0.0,
         ],
     }
+
     num_antennas = config.main_antenna_count
     phases = np.zeros(num_antennas, dtype=np.complex64)
+
+    # Wallops currently runs FullFOV with TX channels 0, 1, 11, 14, and 15 down, leaving the
+    # sparse active set [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13].
+    #
+    # These per-frequency phases are manual copies of the chosen offline optimization result for
+    # that sparse array: NEC element-factor export -> genetic-array/batch_genetic_solver.py ->
+    # select a preferred solution from the plots/HDF5 output -> paste the relative phases here.
+    #
+    # Keys are physical antenna indices and values are relative phases in degrees. Antenna 2 is
+    # held at 0 degrees as the phase reference used when the solution was copied into Borealis.
+    wal_sparse_cached = {
+        12000: {
+            2: 0.0,
+            3: 161.87851,
+            4: 153.453079,
+            5: 305.665375,
+            6: 329.709198,
+            7: 144.071167,
+            8: 58.509125,
+            9: 34.303589,
+            10: 42.588226,
+            12: 343.550934,
+            13: 167.465164,
+        },
+    }
+    if config.site_id == "wal" and frequency_khz in wal_sparse_cached.keys():
+        tx_idx = np.asarray(tx_antennas, dtype=int)
+        wal_tx = np.array(sorted(wal_sparse_cached[frequency_khz].keys()), dtype=int)
+        if np.array_equal(np.sort(tx_idx), wal_tx):
+            for ant, phase_deg in wal_sparse_cached[frequency_khz].items():
+                phases[ant] = np.exp(1j * np.deg2rad(phase_deg))
+            return phases.reshape(1, num_antennas) * 0.999999
+
     if len(tx_antennas) == 16:
         if frequency_khz in cached_values_16_antennas.keys():
             phases[tx_antennas] = np.exp(

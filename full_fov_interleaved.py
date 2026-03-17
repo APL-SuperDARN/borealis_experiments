@@ -16,6 +16,7 @@ import copy
 import numpy as np
 
 import borealis_experiments.superdarn_common_fields as scf
+from borealis_experiments.full_fov import rx_phase_pattern
 from utils.experiment_prototype import ExperimentPrototype
 
 
@@ -180,7 +181,8 @@ class FullFOVInterleaved(ExperimentPrototype):
         """
         super().__init__()
 
-        # default frequency set here
+        # On WAL, COMMON_MODE_FREQ_1 resolves to 12000 kHz, so this comparison mode defaults to
+        # interleaving the current 12 MHz FullFOV setup with a narrowbeam normalscan-style slice.
         freq = kwargs.get("freq", scf.COMMON_MODE_FREQ_1)
 
         slice_0 = {
@@ -191,20 +193,21 @@ class FullFOVInterleaved(ExperimentPrototype):
             "first_range": scf.STD_FIRST_RANGE,
             "intt": scf.INTT_MS,  # duration of an integration, in ms
             "beam_angle": scf.STD_BEAM_ANGLES,
-            "rx_beam_order": [[i for i in range(scf.config.main_antenna_count)]],
+            "rx_beam_order": [[i for i in range(len(scf.STD_BEAM_ANGLES))]],
             "tx_beam_order": [0],  # only one pattern
-            "tx_antenna_pattern": sixty_deg_widebeam,
+            "tx_antenna_pattern": scf.easy_widebeam,
+            "rx_antenna_pattern": rx_phase_pattern,
             "freq": freq,  # kHz
-            "acf": False,
-            # "xcf": True,  # cross-correlation processing
-            # "acfint": True,  # interferometer acfs
-            # "align_sequences": True,     # align start of sequence to tenths of a second
+            "acf": True,
+            "xcf": True,
+            "acfint": True,
         }
 
         slice_1 = copy.deepcopy(slice_0)
         slice_1.pop("tx_antenna_pattern")
-        slice_1["rx_beam_order"] = [i for i in range(len(scf.STD_BEAM_ANGLES))]
-        slice_1["tx_beam_order"] = [i for i in range(len(scf.STD_BEAM_ANGLES))]
+        slice_1.pop("rx_antenna_pattern")
+        slice_1["rx_beam_order"] = scf.STD_BEAM_ORDER
+        slice_1["tx_beam_order"] = scf.STD_BEAM_ORDER
 
         self.add_slice(slice_0)
         self.add_slice(slice_1, interfacing_dict={0: "AVEPERIOD"})
