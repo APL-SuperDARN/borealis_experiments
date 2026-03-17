@@ -383,8 +383,6 @@ class FullFOV(ExperimentPrototype):
         """
         super().__init__()
 
-        # On WAL, COMMON_MODE_FREQ_1 resolves to 12000 kHz, so the default FullFOV run uses
-        # the current wal_sparse_cached[12000] TX phase law through scf.easy_widebeam().
         freq = kwargs.get("freq", scf.COMMON_MODE_FREQ_1)
 
         self.add_slice(
