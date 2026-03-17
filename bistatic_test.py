@@ -135,11 +135,13 @@ class BistaticTest(ExperimentPrototype):
 
         elif listen_to == scf.config.site_id:
             slice_0["rx_beam_order"] = [[i for i in range(len(scf.STD_BEAM_ANGLES))]]
+            slice_0["rxonly"] = True
             print('Defaulting to rx_only mode, "listen_to" set to this radar')
             comment_str = "Widebeam listening mode"
 
         else:
             slice_0["rx_beam_order"] = [[i for i in range(len(scf.STD_BEAM_ANGLES))]]
+            slice_0["rxonly"] = True
             comment_str = "Bistatic widebeam mode - listening to {}".format(listen_to)
 
         super().__init__(comment_string=comment_str)
