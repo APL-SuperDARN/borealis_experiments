@@ -123,7 +123,7 @@ def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
     that illuminates the full FOV.
 
     Supported operating points:
-    - 16 or 8 antennas with the legacy cached phase laws.
+    - 16 or 8 antennas with the USask.
     - The current WAL sparse 11-element TX set at 12000/13700 kHz.
     """
     num_antennas = config.main_antenna_count
@@ -153,19 +153,6 @@ def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
             12: 343.550934,
             13: 167.465164,
         },               
-        13700: {
-            2: 0.0,
-            3: 117.205616,
-            4: 338.268733,
-            5: 32.710628,
-            6: 27.898531,
-            7: 46.891061,
-            8: 116.232303,
-            9: 292.800707,
-            10: 234.136463,
-            12: 132.31838,
-            13: 11.733696,
-        },
     }
 
     freq_key = int(round(float(frequency_khz)))
@@ -176,9 +163,7 @@ def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
                 phases[ant] = np.exp(1j * np.deg2rad(phase_deg))
             return phases.reshape(1, num_antennas) * 0.999999
 
-    antenna_spacing_m = (
-        antenna_locations[1, 0] - antenna_locations[0, 0]
-    )  # difference in x-position of first two antennas
+    antenna_spacing_m = config.main_antenna_spacing
     if not (np.isclose(antenna_spacing_m, 15.24) or np.isclose(antenna_spacing_m, 12.8016)):
         raise ValueError(
             f"Antenna spacing must be 15.24m (or 12.8016m at WAL). Given value: {antenna_spacing_m}"
