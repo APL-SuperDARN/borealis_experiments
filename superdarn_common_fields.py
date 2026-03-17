@@ -119,56 +119,9 @@ STD_SCANBOUND = easy_scanbound(
 
 def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
     """
-    Returns complex antenna weights for the main array that generate a wide transmit pattern
-    that illuminates the full FOV.
-
-    Supported operating points:
-    - 16 or 8 antennas with 15.24 m spacing (legacy cached patterns).
-    - WAL sparse-array fallback for the currently wired TX set at 12000/13700 kHz.
+    Returns phases in degrees for each antenna in the main array that will generate a wide beam pattern
+    that illuminates the full FOV. Only 8 or 16 antennas at common frequencies are supported.
     """
-    num_antennas = config.main_antenna_count
-    phases = np.zeros(num_antennas, dtype=np.complex64)
-
-    # WAL sparse-array fallback pattern:
-    # Optimized for currently connected TX channels
-    # tx_antennas == [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13]
-    # in config/wal/wal_config.ini, at common-mode frequencies.
-    wal_sparse_cached = {
-        12000: {
-            2: 0.0284 + 0.0j,
-            3: -0.0953 + 0.0j,
-            4: 0.1374 + 0.0j,
-            5: -0.0812 + 0.0j,
-            6: -0.1536 + 0.0j,
-            7: 1.0000 + 0.0j,
-            8: 0.8705 + 0.0j,
-            9: -0.1039 + 0.0j,
-            10: -0.0316 + 0.0j,
-            12: -0.0057 + 0.0j,
-            13: -0.0062 + 0.0j,
-        },
-        13700: {
-            2: 0.0748 + 0.0j,
-            3: -0.1156 + 0.0j,
-            4: 0.1145 + 0.0j,
-            5: -0.0343 + 0.0j,
-            6: -0.1825 + 0.0j,
-            7: 1.0000 + 0.0j,
-            8: 0.9847 + 0.0j,
-            9: -0.1873 + 0.0j,
-            10: -0.0036 + 0.0j,
-            12: -0.0593 + 0.0j,
-            13: 0.0309 + 0.0j,
-        },
-    }
-
-    freq_key = int(round(float(frequency_khz)))
-    if config.site_id == "wal" and freq_key in wal_sparse_cached:
-        wal_tx = sorted(wal_sparse_cached[freq_key].keys())
-        if sorted(tx_antennas) == wal_tx:
-            for ant, weight in wal_sparse_cached[freq_key].items():
-                phases[ant] = np.complex64(weight)
-            return phases.reshape(1, num_antennas) * 0.999999
 
     antenna_spacing_m = (
         antenna_locations[1, 0] - antenna_locations[0, 0]
@@ -518,6 +471,8 @@ def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
             0.0,
         ],
     }
+    num_antennas = config.main_antenna_count
+    phases = np.zeros(num_antennas, dtype=np.complex64)
     if len(tx_antennas) == 16:
         if frequency_khz in cached_values_16_antennas.keys():
             phases[tx_antennas] = np.exp(
