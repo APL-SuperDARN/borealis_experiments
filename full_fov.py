@@ -383,6 +383,7 @@ class FullFOV(ExperimentPrototype):
         """
         super().__init__()
 
+        # default frequency set here
         freq = kwargs.get("freq", scf.COMMON_MODE_FREQ_1)
 
         self.add_slice(
