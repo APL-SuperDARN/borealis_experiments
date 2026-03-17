@@ -119,50 +119,10 @@ STD_SCANBOUND = easy_scanbound(
 
 def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
     """
-    Returns complex antenna weights for the main array that generate a wide transmit pattern
-    that illuminates the full FOV.
-
-    Supported operating points:
-    - 16 or 8 antennas with the USask.
-    - The current WAL sparse 11-element TX set at 12000/13700 kHz.
+    Returns phases in degrees for each antenna in the main array that will generate a wide beam pattern
+    that illuminates the full FOV. Only 8 or 16 antennas at common frequencies are supported, plus
+    the WAL sparse-array override below.
     """
-    num_antennas = config.main_antenna_count
-    phases = np.zeros(num_antennas, dtype=np.complex64)
-    tx_idx = np.asarray(tx_antennas, dtype=int)
-
-    # Wallops currently runs FullFOV with TX channels 0, 1, 11, 14, and 15 down, leaving the
-    # sparse active set [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13].
-    #
-    # These per-frequency phases are manual copies of the chosen offline optimization result for
-    # that sparse array: NEC element-factor export -> genetic-array/batch_genetic_solver.py ->
-    # select a preferred solution from the plots/HDF5 output -> paste the relative phases here.
-    #
-    # Keys are physical antenna indices and values are relative phases in degrees. Antenna 2 is
-    # held at 0 degrees as the phase reference used when the solution was copied into Borealis.
-    wal_sparse_cached = {
-        12000: {
-            2: 0.0,
-            3: 161.87851,
-            4: 153.453079,
-            5: 305.665375,
-            6: 329.709198,
-            7: 144.071167,
-            8: 58.509125,
-            9: 34.303589,
-            10: 42.588226,
-            12: 343.550934,
-            13: 167.465164,
-        },               
-    }
-
-    freq_key = int(round(float(frequency_khz)))
-    if config.site_id == "wal" and freq_key in wal_sparse_cached:
-        wal_tx = np.array(sorted(wal_sparse_cached[freq_key].keys()), dtype=int)
-        if np.array_equal(np.sort(tx_idx), wal_tx):
-            for ant, phase_deg in wal_sparse_cached[freq_key].items():
-                phases[ant] = np.exp(1j * np.deg2rad(phase_deg))
-            return phases.reshape(1, num_antennas) * 0.999999
-
     antenna_spacing_m = config.main_antenna_spacing
     if not (np.isclose(antenna_spacing_m, 15.24) or np.isclose(antenna_spacing_m, 12.8016)):
         raise ValueError(
@@ -509,28 +469,58 @@ def easy_widebeam(frequency_khz, tx_antennas, antenna_locations):
             0.0,
         ],
     }
-    if tx_idx.size < 2:
-        raise ValueError(
-            f"Invalid parameters for easy_widebeam(): tx_antennas: {tx_antennas}, "
-            f"frequency_khz: {frequency_khz}, main_antenna_count: {num_antennas}. "
-            f"Need at least 2 TX antennas for a deterministic widebeam pattern."
-        )
 
-    # The legacy cached phase laws only exist at discrete optimization frequencies. If a nearby
-    # frequency is requested, reuse the closest solved entry instead of failing outright.
-    nearest_16 = min(cached_values_16_antennas.keys(), key=lambda k: abs(float(frequency_khz) - float(k)))
-    nearest_8 = min(cached_values_8_antennas.keys(), key=lambda k: abs(float(frequency_khz) - float(k)))
+    num_antennas = config.main_antenna_count
+    phases = np.zeros(num_antennas, dtype=np.complex64)
 
-    if tx_idx.size == 8:
-        phases[tx_idx] = np.exp(1j * np.deg2rad(cached_values_8_antennas[nearest_8]))
-        return phases.reshape(1, num_antennas) * 0.999999
+    # Wallops currently runs FullFOV with TX channels 0, 1, 11, 14, and 15 down, leaving the
+    # sparse active set [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13].
+    #
+    # These per-frequency phases are manual copies of the chosen offline optimization result for
+    # that sparse array: NEC element-factor export -> genetic-array/batch_genetic_solver.py ->
+    # select a preferred solution from the plots/HDF5 output -> paste the relative phases here.
+    #
+    # Keys are physical antenna indices and values are relative phases in degrees. Antenna 2 is
+    # held at 0 degrees as the phase reference used when the solution was copied into Borealis.
+    wal_sparse_cached = {
+        12000: {
+            2: 0.0,
+            3: 161.87851,
+            4: 153.453079,
+            5: 305.665375,
+            6: 329.709198,
+            7: 144.071167,
+            8: 58.509125,
+            9: 34.303589,
+            10: 42.588226,
+            12: 343.550934,
+            13: 167.465164,
+        },
+    }
+    if config.site_id == "wal" and frequency_khz in wal_sparse_cached.keys():
+        tx_idx = np.asarray(tx_antennas, dtype=int)
+        wal_tx = np.array(sorted(wal_sparse_cached[frequency_khz].keys()), dtype=int)
+        if np.array_equal(np.sort(tx_idx), wal_tx):
+            for ant, phase_deg in wal_sparse_cached[frequency_khz].items():
+                phases[ant] = np.exp(1j * np.deg2rad(phase_deg))
+            return phases.reshape(1, num_antennas) * 0.999999
 
-    cached16 = np.exp(1j * np.deg2rad(cached_values_16_antennas[nearest_16]))
-    if tx_idx.size == 16:
-        phases[tx_idx] = cached16
-    else:
-        # If we do not have a dedicated sparse solution for this exact active set, fall back to
-        # the nearest 16-element phase law and sample it at the enabled antenna indices.
-        phases[tx_idx] = cached16[tx_idx]
-
-    return phases.reshape(1, num_antennas) * 0.999999
+    if len(tx_antennas) == 16:
+        if frequency_khz in cached_values_16_antennas.keys():
+            phases[tx_antennas] = np.exp(
+                1j * np.deg2rad(cached_values_16_antennas[frequency_khz])
+            )
+            return phases.reshape(1, num_antennas) * 0.999999
+    elif len(tx_antennas) == 8:
+        if frequency_khz in cached_values_8_antennas.keys():
+            phases[tx_antennas] = np.exp(
+                1j * np.deg2rad(cached_values_8_antennas[frequency_khz])
+            )
+            return phases.reshape(1, num_antennas) * 0.999999
+    # If you get this far, the number of antennas or frequency is not supported for this function.
+    raise ValueError(f"Invalid parameters for easy_widebeam(): tx_antennas: {tx_antennas}, "
+                     f"frequency_khz: {frequency_khz}, main_antenna_count: {num_antennas}.\n"
+                     f"This could be accidental - if you have disconnected a TX channel in your config file, "
+                     f"this will reduce the number of transmitting antennas.\nWide transmission beam patterns "
+                     f"are very sensitive, so this function only accepts specific operating parameters to produce "
+                     f"predictable beam patterns.")
