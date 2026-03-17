@@ -1,7 +1,7 @@
 #!/usr/bin/python
 """
 full_fov_15km
-~~~~~~~~~~~
+~~~~~~~~~~~~~
 The mode transmits with a pre-calculated phase progression across the array which illuminates
 the full FOV, and receives on all antennas. This mode uses 15-km range gates for high spatial resolution.
 
@@ -77,4 +77,3 @@ class FullFOV15Km(ExperimentPrototype):
                 "xcf": True,
             }
         )
-
