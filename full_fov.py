@@ -6,6 +6,8 @@ full_fov
 The mode transmits with a pre-calculated phase progression across the array which illuminates
 the full FOV, and receives on all antennas. The first pulse in each sequence starts on the 0.1
 second boundaries, to enable bistatic listening on other radars.
+This development variant can replace each standard pulse with an LFM-coded pulse while
+preserving the existing 7-pulse timing.
 
 :copyright: 2022 SuperDARN Canada
 :author: Remington Rohel
@@ -13,6 +15,7 @@ second boundaries, to enable bistatic listening on other radars.
 
 import numpy as np
 
+from utils import decimation_scheme as dm
 from utils.signals import get_phase_shift
 import borealis_experiments.superdarn_common_fields as scf
 from utils.experiment_prototype import ExperimentPrototype
@@ -371,6 +374,33 @@ def rx_phase_pattern(beam_angle, freq_khz, antenna_locations):
     return dense_shift
 
 
+def lfm_rx_scheme(
+    output_rate_hz: float = 200_000.0,
+    lfm_bandwidth_hz: float = 12_500.0,
+) -> dm.DecimationScheme:
+    sample_rate = 5.0e6
+    dm_rate = int(round(sample_rate / output_rate_hz))
+
+    if not np.isclose(sample_rate / dm_rate, output_rate_hz, atol=1.0):
+        raise ValueError(f"output_rate_hz={output_rate_hz} is not an integer decimation of 5 MHz")
+
+    if output_rate_hz <= 4.0 * lfm_bandwidth_hz:
+        raise ValueError(
+            f"output_rate_hz={output_rate_hz} must be comfortably above lfm_bandwidth_hz={lfm_bandwidth_hz}"
+        )
+
+    cutoff_hz = min(0.45 * output_rate_hz, max(60e3, 3.0 * lfm_bandwidth_hz))
+    transition_hz = min(cutoff_hz * 0.5, max(10e3, lfm_bandwidth_hz))
+    ripple_db = 80
+    scale = 1000.0
+
+    # Keep the full chirp plus matched-filter sidelobes while exporting a denser receive grid than
+    # standard rawacf production would use.
+    taps = scale * dm.create_firwin_filter_by_attenuation(sample_rate, transition_hz, cutoff_hz, ripple_db)
+    stage = dm.DecimationStage(0, sample_rate, dm_rate, taps.tolist())
+    return dm.DecimationScheme(sample_rate, sample_rate / dm_rate, stages=[stage])
+
+
 class FullFOV(ExperimentPrototype):
     cpid = 3800
 
@@ -379,29 +409,69 @@ class FullFOV(ExperimentPrototype):
         kwargs:
 
         freq: int
+        pulse_waveform: str = "lfm" or "cw"
+        lfm_bandwidth_hz: float
+        lfm_sweep: str = "up" or "down"
+        output_rx_rate_hz: float
 
         """
-        super().__init__()
+        freq = int(kwargs.get("freq", scf.COMMON_MODE_FREQ_1))
+        pulse_waveform = str(kwargs.get("pulse_waveform", "lfm")).lower()
+        lfm_bandwidth_hz = float(kwargs.get("lfm_bandwidth_hz", 12_500.0))
+        lfm_sweep = str(kwargs.get("lfm_sweep", "up")).lower()
+        output_rx_rate_hz = float(kwargs.get("output_rx_rate_hz", 200_000.0))
+        num_ranges = int(kwargs.get("num_ranges", scf.STD_NUM_RANGES))
+        first_range = float(kwargs.get("first_range", scf.STD_FIRST_RANGE))
+        intt_ms = int(kwargs.get("intt_ms", scf.INTT_MS))
 
-        # default frequency set here
-        freq = kwargs.get("freq", scf.COMMON_MODE_FREQ_1)
+        if pulse_waveform not in {"cw", "lfm"}:
+            raise ValueError(f"Unsupported pulse_waveform {pulse_waveform!r}")
 
-        self.add_slice(
-            {  # slice_id = 0, there is only one slice.
-                "pulse_sequence": scf.SEQUENCE_7P,
-                "tau_spacing": scf.TAU_SPACING_7P,
-                "pulse_len": scf.PULSE_LEN_45KM,
-                "num_ranges": scf.STD_NUM_RANGES,
-                "first_range": scf.STD_FIRST_RANGE,
-                "intt": scf.INTT_MS,  # duration of an integration, in ms
-                "beam_angle": scf.STD_BEAM_ANGLES,
-                "rx_beam_order": [[i for i in range(len(scf.STD_BEAM_ANGLES))]],
-                "tx_beam_order": [0],  # only one pattern
-                "tx_antenna_pattern": scf.easy_widebeam,
-                "rx_antenna_pattern": rx_phase_pattern,
-                "freq": freq,  # kHz
-                "acf": True,
-                "xcf": True,  # cross-correlation processing
-                "acfint": True,  # interferometer acfs
-            }
-        )
+        comment = ""
+        if pulse_waveform == "lfm":
+            sample_spacing_km = 299_792_458.0 / (2.0 * output_rx_rate_hz) / 1000.0
+            comment = (
+                f"Full FOV LFM; lfm_bw_hz={lfm_bandwidth_hz:.1f}; "
+                f"lfm_sweep={lfm_sweep}; rx_sample_spacing_km={sample_spacing_km:.3f}"
+            )
+
+        super().__init__(comment_string=comment)
+
+        slice_config = {
+            "pulse_sequence": scf.SEQUENCE_7P,
+            "tau_spacing": scf.TAU_SPACING_7P,
+            "pulse_len": scf.PULSE_LEN_45KM,
+            "num_ranges": num_ranges,
+            "first_range": first_range,
+            "intt": intt_ms,  # duration of an integration, in ms
+            "beam_angle": scf.STD_BEAM_ANGLES,
+            "rx_beam_order": [[i for i in range(len(scf.STD_BEAM_ANGLES))]],
+            "tx_beam_order": [0],  # only one pattern
+            "tx_antenna_pattern": scf.easy_widebeam,
+            "rx_antenna_pattern": rx_phase_pattern,
+            "freq": freq,  # kHz
+        }
+
+        if pulse_waveform == "lfm":
+            slice_config.update(
+                {
+                    "pulse_waveform": "lfm",
+                    "pulse_waveform_bandwidth": lfm_bandwidth_hz,
+                    "pulse_waveform_sweep": lfm_sweep,
+                    "decimation_scheme": lfm_rx_scheme(output_rx_rate_hz, lfm_bandwidth_hz),
+                    # The coded mode is intended for IQ capture plus offline pulse compression.
+                    "acf": False,
+                    "xcf": False,
+                    "acfint": False,
+                }
+            )
+        else:
+            slice_config.update(
+                {
+                    "acf": True,
+                    "xcf": True,  # cross-correlation processing
+                    "acfint": True,  # interferometer acfs
+                }
+            )
+
+        self.add_slice(slice_config)
