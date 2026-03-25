@@ -409,14 +409,14 @@ class FullFOV(ExperimentPrototype):
         kwargs:
 
         freq: int
-        pulse_waveform: str = "lfm" or "cw"
+        pulse_waveform: str = "cw" or "lfm"
         lfm_bandwidth_hz: float
         lfm_sweep: str = "up" or "down"
         output_rx_rate_hz: float
 
         """
         freq = int(kwargs.get("freq", scf.COMMON_MODE_FREQ_1))
-        pulse_waveform = str(kwargs.get("pulse_waveform", "lfm")).lower()
+        pulse_waveform = str(kwargs.get("pulse_waveform", "cw")).lower()
         lfm_bandwidth_hz = float(kwargs.get("lfm_bandwidth_hz", 12_500.0))
         lfm_sweep = str(kwargs.get("lfm_sweep", "up")).lower()
         output_rx_rate_hz = float(kwargs.get("output_rx_rate_hz", 200_000.0))
