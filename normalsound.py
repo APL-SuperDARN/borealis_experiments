@@ -26,6 +26,10 @@ class NormalSound(ExperimentPrototype):
 
         freqrange = (max(scf.SOUNDING_FREQS) - min(scf.SOUNDING_FREQS)) / 2
         centerfreq = min(scf.SOUNDING_FREQS) + freqrange
+        # Wallops needs a small offset from the midpoint to avoid the center
+        # frequency exclusion while retaining the shared 5 MHz sampling band.
+        if scf.config.site_id == "wal":
+            centerfreq = 12150
 
         slices = []
 

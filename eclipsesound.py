@@ -22,10 +22,10 @@ class EclipseSound(ExperimentPrototype):
 
     def __init__(self):
         sounding_beams = [0, 7]
-        # Use the site's configured frequencies (up to the seven requested for
-        # the eclipse). Timing follows the resulting beam/frequency sequence
-        # rather than assuming a fixed site frequency count.
-        sounding_freqs = scf.SOUNDING_FREQS[:7]
+        # The Wallops site list fits one 5 MHz sampling band after transition
+        # margins and is distributed approximately evenly in sqrt(f).
+        sounding_freqs = scf.SOUNDING_FREQS
+        centerfreq = 12150
         beam_nums = []
         freq_nums = []
         for beam, freq_index in itertools.product(sounding_beams, range(len(sounding_freqs))):
@@ -45,6 +45,8 @@ class EclipseSound(ExperimentPrototype):
             "rx_beam_order": scf.STD_BEAM_ORDER,
             "scanbound": scf.easy_scanbound(common_intt_ms, scf.STD_BEAM_ORDER),
             "freq": scf.COMMON_MODE_FREQ_1,
+            "txctrfreq": centerfreq,
+            "rxctrfreq": centerfreq,
             "acf": True,
             "xcf": True,
             "acfint": False,
@@ -67,6 +69,8 @@ class EclipseSound(ExperimentPrototype):
             ],
             "freq": sounding_freqs,
             "freq_order": freq_nums,
+            "txctrfreq": centerfreq,
+            "rxctrfreq": centerfreq,
             "acf": True,
             "xcf": True,
             "acfint": False,
