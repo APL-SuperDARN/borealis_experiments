@@ -23,8 +23,8 @@ class EclipseSound(ExperimentPrototype):
     def __init__(self):
         sounding_beams = [0, 7]
         # Use the site's configured frequencies (up to the seven requested for
-        # the eclipse).  WAL currently configures six; timing must follow the
-        # resulting beam/frequency sequence rather than assume seven.
+        # the eclipse). Timing follows the resulting beam/frequency sequence
+        # rather than assuming a fixed site frequency count.
         sounding_freqs = scf.SOUNDING_FREQS[:7]
         beam_nums = []
         freq_nums = []
